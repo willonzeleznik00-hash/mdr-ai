@@ -1,0 +1,177 @@
+cat > frontend/index.html <<'HTML'
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Regulatory Assistant</title>
+  <style>
+    body { font-family: -apple-system, system-ui, Segoe UI, Roboto, Arial; background: #0b1020; color: #e8ecff; margin: 0; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 48px 20px; }
+    .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 22px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+    h1 { margin: 0 0 8px; font-size: 34px; letter-spacing: -0.6px; }
+    .sub { opacity: 0.85; margin: 0 0 22px; line-height: 1.5; }
+    .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+    .btn { background: #5b7cfa; border: 0; padding: 11px 14px; border-radius: 12px; color: white; font-weight: 700; cursor: pointer; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn.secondary { background: rgba(255,255,255,0.12); }
+    .pill { display: inline-flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 999px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.12); }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 16px; }
+    @media (min-width: 860px) { .grid { grid-template-columns: 1fr 1fr; } }
+    .box { background: rgba(0,0,0,0.18); border: 1px solid rgba(255,255,255,0.10); border-radius: 14px; padding: 14px; }
+    .label { font-size: 12px; opacity: 0.75; margin-bottom: 6px; }
+    .value { font-size: 16px; font-weight: 700; }
+    ul { margin: 10px 0 0 18px; }
+    .muted { opacity: 0.8; }
+    .footer { opacity: 0.6; font-size: 12px; margin-top: 16px; }
+    .err { color: #ffb4b4; white-space: pre-wrap; }
+    .ok { color: #b8ffcf; }
+    input[type="file"] { color: #e8ecff; }
+    pre { overflow:auto; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>AI Regulatory Assistant</h1>
+    <p class="sub">Ladda upp ett dokument (PDF/DOCX) → få dokumenttyp + sammanfattning på sekunder. Perfekt för MDR/CE-flöden.</p>
+
+    <div class="card">
+      <div class="row">
+        <input id="file" type="file" accept=".pdf,.docx" />
+        <button id="analyzeBtn" class="btn" disabled>Analysera</button>
+        <button id="resetBtn" class="btn secondary">Rensa</button>
+        <span id="status" class="pill muted">Välj en fil</span>
+      </div>
+
+      <div id="result" class="grid" style="display:none;">
+        <div class="box">
+          <div class="label">Dokumenttyp</div>
+          <div id="docType" class="value">—</div>
+          <div class="footer" id="confidence">Confidence: —</div>
+        </div>
+        <div class="box">
+          <div class="label">Summary</div>
+          <div id="oneLiner" class="value">—</div>
+          <ul id="bullets"></ul>
+        </div>
+      </div>
+
+      <div id="raw" class="box" style="display:none; margin-top:14px;">
+        <div class="label">Raw JSON</div>
+        <pre id="rawJson" style="margin:0; white-space:pre-wrap;"></pre>
+      </div>
+
+      <div id="error" class="err" style="display:none; margin-top:14px;"></div>
+    </div>
+  </div>
+
+<script>
+  const fileEl = document.getElementById("file");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  const resetBtn = document.getElementById("resetBtn");
+  const statusEl = document.getElementById("status");
+  const resultEl = document.getElementById("result");
+  const rawEl = document.getElementById("raw");
+  const rawJsonEl = document.getElementById("rawJson");
+  const errEl = document.getElementById("error");
+
+  const docTypeEl = document.getElementById("docType");
+  const oneLinerEl = document.getElementById("oneLiner");
+  const bulletsEl = document.getElementById("bullets");
+  const confEl = document.getElementById("confidence");
+
+  function setStatus(text, ok=false){
+    statusEl.textContent = text;
+    statusEl.className = ok ? "pill ok" : "pill muted";
+  }
+
+  function showError(msg){
+    errEl.style.display = "block";
+    errEl.textContent = msg;
+  }
+
+  function clearError(){
+    errEl.style.display = "none";
+    errEl.textContent = "";
+  }
+
+  function resetUI(){
+    resultEl.style.display = "none";
+    rawEl.style.display = "none";
+    rawJsonEl.textContent = "";
+    docTypeEl.textContent = "—";
+    oneLinerEl.textContent = "—";
+    confEl.textContent = "Confidence: —";
+    bulletsEl.innerHTML = "";
+    clearError();
+    setStatus("Välj en fil");
+  }
+
+  fileEl.addEventListener("change", () => {
+    resetUI();
+    analyzeBtn.disabled = !fileEl.files || fileEl.files.length === 0;
+    if (!analyzeBtn.disabled) setStatus("Redo att analysera");
+  });
+
+  resetBtn.addEventListener("click", () => {
+    fileEl.value = "";
+    analyzeBtn.disabled = true;
+    resetUI();
+  });
+
+  analyzeBtn.addEventListener("click", async () => {
+    clearError();
+    resultEl.style.display = "none";
+    rawEl.style.display = "none";
+
+    const f = fileEl.files?.[0];
+    if (!f) return;
+
+    analyzeBtn.disabled = true;
+    setStatus("Laddar upp…");
+
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+
+      const up = await fetch("/upload", { method: "POST", body: fd });
+      if (!up.ok) throw new Error("Upload failed: " + await up.text());
+
+      const upJson = await up.json();
+      const documentId = upJson.document_id;
+
+      setStatus("Analyserar…");
+
+      const an = await fetch(`/analyze/${documentId}`);
+      if (!an.ok) throw new Error("Analyze failed: " + await an.text());
+
+      const out = await an.json();
+
+      docTypeEl.textContent = out.doc_type ?? "—";
+      confEl.textContent = "Confidence: " + (out.confidence ?? "—");
+      oneLinerEl.textContent = out.summary_one_liner ?? "—";
+
+      bulletsEl.innerHTML = "";
+      (out.summary_bullets || []).forEach(b => {
+        const li = document.createElement("li");
+        li.textContent = b;
+        bulletsEl.appendChild(li);
+      });
+
+      rawJsonEl.textContent = JSON.stringify(out, null, 2);
+
+      resultEl.style.display = "grid";
+      rawEl.style.display = "block";
+      setStatus("Klart ✅", true);
+
+    } catch (e) {
+      showError(String(e));
+      setStatus("Fel ❌");
+    } finally {
+      analyzeBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
+HTML
