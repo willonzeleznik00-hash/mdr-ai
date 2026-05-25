@@ -165,7 +165,7 @@ DOCUMENT:
         return json.loads(resp.choices[0].message.content)
 
     except Exception as e:
-    return {
+           return {    
         "doc_type": "IFU / MDR Document",
         "confidence": 0.78,
         "summary_one_liner": "The uploaded document was reviewed, but the AI output could not be fully parsed. Key MDR review areas may require manual follow-up.",
