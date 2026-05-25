@@ -445,7 +445,9 @@ MDR AI Copilot
               <div style={card}>
                 <h3>Annual time saved</h3>
                 <h1>{(totalHoursSaved * 12).toFixed(0)}h</h1>
-                <p style={{ color: "#64748b" }}>≈ 3 QA work weeks recovered</p>
+                <p style={{ color: "#64748b" }}>
+  ≈ {Math.max(0.1, ((totalHoursSaved * 12) / 40)).toFixed(1)} QA work weeks recovered
+</p>
               </div>
               <div style={card}>
                 <h3>Annual QA saving</h3>
