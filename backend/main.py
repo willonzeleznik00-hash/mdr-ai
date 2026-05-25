@@ -51,11 +51,14 @@ def health():
 # --- Helpers ---
 def extract_text_from_pdf(path: Path) -> str:
     text = []
+    max_pages = 25
+
     with pdfplumber.open(str(path)) as pdf:
-        for page in pdf.pages:
+        for page in pdf.pages[:max_pages]:
             t = page.extract_text()
             if t:
                 text.append(t)
+
     return "\n".join(text)
 
 
